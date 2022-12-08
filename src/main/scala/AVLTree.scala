@@ -49,16 +49,28 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
 
     def delete(v: BigInt): AVLTree = {
         if this.v == v then {
-            // move left child into root (if nonempty)
             if this.left == Empty then
                 this.right
+            else if this.right == Empty then 
+                this.left
             else {
-                ???
+                // find biggest in left subtree -> it's a leaf
+                // move value from it into root of result
+                val left = this.left.asInstanceOf[Branch]
+                val max = left.max()
+                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max in leaf in left
             }
         } else if v < this.v then
             Branch(this.v, this.left.delete(v), this.right).balanced()
         else 
             Branch(this.v, this.left, this.right.delete(v)).balanced()
+    }
+
+    def max(): BigInt = {
+        this.right match {
+            case Empty => v
+            case b: Branch => b.max()
+        }
     }
 
     override def balanced(): AVLTree = {
@@ -79,46 +91,28 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     // this is +2, right child is +1
     def rotateLeft(): AVLTree = {
         val Branch(w, a, rChild) = this
-        val Branch(u, b, c) = rChild match {
-            case b: Branch => b
-            case Empty => throw UnexpectedException("invalid rotateLeft call")
-        }
+        val Branch(u, b, c) = rChild.asInstanceOf[Branch]
         Branch(u, Branch(w, a, b), c)
     }
 
     // this is on +2, right child is on -1
     def rotateRightLeft(): AVLTree = {
         val Branch(w, a, rChild) = this
-        val Branch(u, lGrandchild, d) = rChild match {
-            case b: Branch => b
-            case Empty => throw UnexpectedException("invalid rotateRightLeft call")
-        }
-        val Branch(z, b, c) = lGrandchild match {
-            case b: Branch => b
-            case Empty => throw UnexpectedException("invalid rotateRightLeft call")
-        }
+        val Branch(u, lGrandchild, d) = rChild.asInstanceOf[Branch]
+        val Branch(z, b, c) = lGrandchild.asInstanceOf[Branch]
         Branch(z, Branch(w, a, b), Branch(u, c, d))
     }
 
     def rotateRight(): AVLTree = {
         val Branch(w, lChild, c) = this
-        val Branch(u, a, b) = lChild match {
-            case b: Branch => b
-            case Empty => throw UnexpectedException("invalid rotateLeft call")
-        }
+        val Branch(u, a, b) = lChild.asInstanceOf[Branch]
         Branch(u, a, Branch(w, b, c))
     }
 
     def rotateLeftRight(): AVLTree = {
         val Branch(w, lChild, d) = this
-        val Branch(u, a, rGrandchild) = lChild match {
-            case b: Branch => b
-            case Empty => throw UnexpectedException("invalid rotateRightLeft call")
-        }
-        val Branch(z, b, c) = rGrandchild match {
-            case b: Branch => b
-            case Empty => throw UnexpectedException("invalid rotateRightLeft call")
-        }
+        val Branch(u, a, rGrandchild) = lChild.asInstanceOf[Branch]
+        val Branch(z, b, c) = rGrandchild.asInstanceOf[Branch]
         Branch(z, Branch(u, a, b), Branch(w, c, d))
     }
 }
