@@ -54,11 +54,11 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
             else if this.right == Empty then 
                 this.left
             else {
-                // find biggest in left subtree -> it's a leaf
+                // find biggest in left subtree -> it has no right child
                 // move value from it into root of result
                 val left = this.left.asInstanceOf[Branch]
                 val max = left.max()
-                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max is a leaf in left
+                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max has no right child
             }
         } else if v < this.v then
             Branch(this.v, this.left.delete(v), this.right).balanced()
@@ -84,8 +84,10 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
                 this.rotateRight()
             else
                 this.rotateLeftRight()
-        } else
+        } else if this.balanceFactor.abs < 2 then
             this
+        else
+            throw UnexpectedException("Unexpected balance factor:" + this.balanceFactor) 
     }
 
     // this is +2, right child is +1
