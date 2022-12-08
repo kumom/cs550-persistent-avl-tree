@@ -58,7 +58,7 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
                 // move value from it into root of result
                 val left = this.left.asInstanceOf[Branch]
                 val max = left.max()
-                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max in leaf in left
+                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max is a leaf in left
             }
         } else if v < this.v then
             Branch(this.v, this.left.delete(v), this.right).balanced()

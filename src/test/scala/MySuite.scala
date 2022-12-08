@@ -82,6 +82,8 @@ class MySuite extends munit.FunSuite {
       tree = tree.delete(v)
       assert(!tree.has(v))
     }
+
+    assert(tree == Empty)
   }
 
   test("double insert") {
