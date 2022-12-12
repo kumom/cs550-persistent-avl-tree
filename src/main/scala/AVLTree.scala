@@ -1,15 +1,31 @@
-import java.rmi.UnexpectedException
-abstract class AVLTree {
+sealed abstract class AVLTree {
     def balanceFactor: BigInt
     def height: BigInt
 
-    def insert(v: BigInt): AVLTree
+    // impl only to make stainless happy
+    def insert(v: BigInt): AVLTree = {
+        require(this.isAVL())
+        this
+    }
 
     def has(v: BigInt): Boolean
 
-    def delete(v: BigInt): AVLTree
+    // impl only to make stainless happy
+    def delete(v: BigInt): AVLTree = {
+        require(this.isAVL())
+        this
+    }
 
-    def balanced(): AVLTree
+    // impl only to make stainless happy
+    def balanced(): AVLTree = {
+        require(this.isAlmostAVL())
+        this
+    }
+
+    def isAVL(): Boolean
+    def isAlmostAVL(): Boolean
+    
+    def isBST(): Boolean
 }
 
 case object Empty extends AVLTree {
@@ -23,11 +39,21 @@ case object Empty extends AVLTree {
     override def has(v: BigInt): Boolean = false
 
     override def balanced(): AVLTree = this
+
+    override def isAlmostAVL(): Boolean = true
+
+    override def isAVL(): Boolean = true
+
+    override def isBST(): Boolean = true
+}
+
+def maxBigInt(a: BigInt, b: BigInt): BigInt = {
+    if a > b then a else b
 }
 
 case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     override def balanceFactor: BigInt = right.height - left.height
-    override def height: BigInt = left.height.max(right.height) + 1
+    override def height: BigInt = maxBigInt(left.height, right.height) + 1
 
     override def has(v: BigInt): Boolean = {
         if this.v == v then
@@ -39,15 +65,25 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     }
 
     override def insert(v: BigInt): AVLTree = {
+        require(this.isAVL())
         if this.v == v then
             this
         else if v < this.v then
-            Branch(this.v, this.left.insert(v), this.right).balanced()
+            val lefter = this.left.insert(v)
+            // assert(lefter.height <= this.left.height + 1)
+            // assert(this.left.height <= )
+            val res = Branch(this.v, lefter, this.right)
+            // assert(res.isBST())
+            assert(lefter.height <= this.left.height + 1)
+            assert(this.right.height - lefter.height >= -2)
+            assert(res.isAlmostAVL())
+            res.balanced()
         else
             Branch(this.v, this.left, this.right.insert(v)).balanced()
-    }
+    }.ensuring(res => res.isAVL() && res.height <= this.height + 1)
 
-    def delete(v: BigInt): AVLTree = {
+    override def delete(v: BigInt): AVLTree = {
+        require(this.isAVL())
         if this.v == v then {
             if this.left == Empty then
                 this.right
@@ -64,7 +100,7 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
             Branch(this.v, this.left.delete(v), this.right).balanced()
         else 
             Branch(this.v, this.left, this.right.delete(v)).balanced()
-    }
+    }.ensuring(res => res.isAVL())
 
     def max(): BigInt = {
         this.right match {
@@ -72,49 +108,90 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
             case b: Branch => b.max()
         }
     }
-
     override def balanced(): AVLTree = {
+        require(this.isAlmostAVL())
+        require((!(this.balanceFactor == 2) || (this.right.balanceFactor == 1 || this.right.balanceFactor == -1))&& (!(this.balanceFactor == -2) || (this.left.balanceFactor == 1 || this.left.balanceFactor == -1)))
         if this.balanceFactor == 2 then {
-            if this.right.balanceFactor == 1 then
-                this.rotateLeft()
-            else
+            // assert(this.right.balanceFactor == 1 || this.right.balanceFactor == -1)
+            if this.right.balanceFactor == -1 then
                 this.rotateRightLeft()
-        } else if this.balanceFactor == -2 then {
-            if this.left.balanceFactor == -1 then
-                this.rotateRight()
             else
+                this.rotateLeft()
+        } else if this.balanceFactor == -2 then {
+            if this.left.balanceFactor == 1 then
                 this.rotateLeftRight()
-        } else if this.balanceFactor.abs < 2 then
+            else
+                this.rotateRight()
+        } else
             this
-        else
-            throw UnexpectedException("Unexpected balance factor:" + this.balanceFactor) 
-    }
+    }.ensuring(res => res.isAVL())
 
     // this is +2, right child is +1
     def rotateLeft(): AVLTree = {
+        require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 1)
         val Branch(w, a, rChild) = this
         val Branch(u, b, c) = rChild.asInstanceOf[Branch]
         Branch(u, Branch(w, a, b), c)
-    }
+    }.ensuring(res => res.isAVL())
 
     // this is on +2, right child is on -1
     def rotateRightLeft(): AVLTree = {
+        require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 1)
         val Branch(w, a, rChild) = this
         val Branch(u, lGrandchild, d) = rChild.asInstanceOf[Branch]
         val Branch(z, b, c) = lGrandchild.asInstanceOf[Branch]
         Branch(z, Branch(w, a, b), Branch(u, c, d))
-    }
+    }.ensuring(res => res.isAVL())
 
     def rotateRight(): AVLTree = {
+        require(this.isAlmostAVL() && this.balanceFactor == -2 && this.left.balanceFactor == -1)
         val Branch(w, lChild, c) = this
         val Branch(u, a, b) = lChild.asInstanceOf[Branch]
         Branch(u, a, Branch(w, b, c))
-    }
+    }.ensuring(res => res.isAVL())
 
     def rotateLeftRight(): AVLTree = {
+        require(this.isAlmostAVL() && this.balanceFactor == -2 && this.left.balanceFactor == 1)
         val Branch(w, lChild, d) = this
         val Branch(u, a, rGrandchild) = lChild.asInstanceOf[Branch]
         val Branch(z, b, c) = rGrandchild.asInstanceOf[Branch]
         Branch(z, Branch(u, a, b), Branch(w, c, d))
+    }.ensuring(res => res.isAVL())
+
+    override def isAVL(): Boolean = this.isAlmostAVL() && this.balanceFactor < 2 && this.balanceFactor > -2
+    private def off(): Boolean = {
+        if this.balanceFactor == 2 then
+            this.right match
+                case Empty => false
+                case z => z.height == 1 || z.height == -1
+        else if this.balanceFactor == -2 then
+            this.left match
+                case Empty => false
+                case z => z.height == 1 || z.height == -1
+        else
+            true
     }
+    override def isAlmostAVL(): Boolean = {
+        off() &&  this.balanceFactor <= 2 && this.balanceFactor >= -2 && this.left.isAVL() && this.right.isAVL()
+    }
+    override def isBST(): Boolean = {
+        if !this.left.isBST() || !this.right.isBST() then
+            false 
+        else if this.left == Empty && this.right == Empty then
+            true
+        else if this.left == Empty && this.right != Empty then {
+            val Branch(v2, _, _) = this.right: @unchecked
+            v < v2
+        }
+        else if this.left != Empty && this.right == Empty then {
+            val Branch(v2, _, _) = this.left: @unchecked
+            v > v2
+        }
+        else {
+            val Branch(v1, _, _) = this.left: @unchecked
+            val Branch(v2, _, _) = this.right: @unchecked
+            v1 < v && v < v2
+        }
+    }
+    
 }
