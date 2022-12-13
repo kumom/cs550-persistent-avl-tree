@@ -1,3 +1,5 @@
+import stainless.collection.List
+
 sealed abstract class AVLTree {
     def balanceFactor: BigInt
     def height: BigInt
@@ -22,6 +24,7 @@ sealed abstract class AVLTree {
         this
     }
 
+    // for verification
     def isAVL(): Boolean
     def isAlmostAVL(): Boolean
     
@@ -54,6 +57,7 @@ def maxBigInt(a: BigInt, b: BigInt): BigInt = {
 
 case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     override def balanceFactor: BigInt = right.height - left.height
+    
     override def height: BigInt = {
         maxBigInt(left.height, right.height) + 1
     }.ensuring(res => res >= -1)
@@ -187,30 +191,14 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         Branch(z, Branch(u, a, b), Branch(w, c, d))
     }.ensuring(res => res.isAVL())
 
-    override def isAVL(): Boolean = this.left.isAVL() && this.right.isAVL() && this.balanceFactor < 2 && this.balanceFactor > -2
+    override def isAVL(): Boolean = {
+        this.isAlmostAVL() && this.balanceFactor < 2 && this.balanceFactor > -2
+    }
 
     override def isAlmostAVL(): Boolean = {
         this.balanceFactor <= 2 && this.balanceFactor >= -2 && this.left.isAVL() && this.right.isAVL()
     }
     override def isBST(): Boolean = {
         true
-        // if !this.left.isBST() || !this.right.isBST() then
-        //     false 
-        // else if this.left == Empty && this.right == Empty then
-        //     true
-        // else if this.left == Empty && this.right != Empty then {
-        //     val Branch(v2, _, _) = this.right: @unchecked
-        //     v < v2
-        // }
-        // else if this.left != Empty && this.right == Empty then {
-        //     val Branch(v2, _, _) = this.left: @unchecked
-        //     v > v2
-        // }
-        // else {
-        //     val Branch(v1, _, _) = this.left: @unchecked
-        //     val Branch(v2, _, _) = this.right: @unchecked
-        //     v1 < v && v < v2
-        // }
     }
-    
 }
