@@ -71,26 +71,10 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         if this.v == v then
             this
         else if v < this.v then
-            // val lefter = this.left.insert(v)
-            // // assert(lefter.height <= this.left.height + 1)
-            // // assert(this.left.height <= )
-            // val res = Branch(this.v, lefter, this.right)
-            // // assert(res.isBST())
-            // assert(lefter.height <= this.left.height + 1)
-            // assert(res.right.height - res.left.height >= -2)
-
-            // assert(res.right.height == this.right.height)
-            // assert(res.left.height >= this.left.height - 1)
-            // // right is the same, left might have increased by one
-            // assert(res.right.height - res.left.height <= 2)
-
-            // assert(res.balanceFactor >= -2 && res.balanceFactor <= 2)
-            // assert(res.isAlmostAVL())
-            // res.balanced()
             Branch(this.v, this.left.insert(v), this.right).balanced()
         else
             Branch(this.v, this.left, this.right.insert(v)).balanced()
-    }.ensuring(res => res.isAVL() && res.height <= this.height + 1 && res.height >= this.height - 1)
+    }.ensuring(res => res.isAVL() && res.height <= this.height + 1 && res.height >= this.height)
 
     override def delete(v: BigInt): AVLTree = {
         require(this.isAVL())
@@ -110,7 +94,7 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
             Branch(this.v, this.left.delete(v), this.right).balanced()
         else 
             Branch(this.v, this.left, this.right.delete(v)).balanced()
-    }.ensuring(res => res.isAVL())
+    }.ensuring(res => res.isAVL() && res.height <= this.height && res.height >= this.height - 1)
 
     def max(): BigInt = {
         this.right match {
