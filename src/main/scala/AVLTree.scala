@@ -75,12 +75,20 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
             val res = Branch(this.v, lefter, this.right)
             // assert(res.isBST())
             assert(lefter.height <= this.left.height + 1)
-            assert(this.right.height - lefter.height >= -2)
+            assert(res.right.height - res.left.height >= -2)
+
+            assert(res.right.height == this.right.height)
+            assert(res.left.height >= this.left.height - 1)
+            // right is the same, left might have increased by one
+            assert(res.right.height - res.left.height <= 2)
+
+            assert(res.balanceFactor >= -2 && res.balanceFactor <= 2)
+            assert(res.off())
             assert(res.isAlmostAVL())
             res.balanced()
         else
             Branch(this.v, this.left, this.right.insert(v)).balanced()
-    }.ensuring(res => res.isAVL() && res.height <= this.height + 1)
+    }.ensuring(res => res.isAVL() && res.height <= this.height + 1 && res.height >= this.height - 1)
 
     override def delete(v: BigInt): AVLTree = {
         require(this.isAVL())
@@ -110,9 +118,9 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     }
     override def balanced(): AVLTree = {
         require(this.isAlmostAVL())
-        require((!(this.balanceFactor == 2) || (this.right.balanceFactor == 1 || this.right.balanceFactor == -1))&& (!(this.balanceFactor == -2) || (this.left.balanceFactor == 1 || this.left.balanceFactor == -1)))
+        // require((!(this.balanceFactor == 2) || (this.right.balanceFactor == 1 || this.right.balanceFactor == -1))&& (!(this.balanceFactor == -2) || (this.left.balanceFactor == 1 || this.left.balanceFactor == -1)))
         if this.balanceFactor == 2 then {
-            // assert(this.right.balanceFactor == 1 || this.right.balanceFactor == -1)
+            assert(this.right.balanceFactor == 1 || this.right.balanceFactor == -1)
             if this.right.balanceFactor == -1 then
                 this.rotateRightLeft()
             else
@@ -134,11 +142,17 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         Branch(u, Branch(w, a, b), c)
     }.ensuring(res => res.isAVL())
 
+    private def hasLeftBranch() = {
+        require(this.isAVL() && this.balanceFactor == -1)
+    }.ensuring(_ => this.left.isInstanceOf[Branch])
+    
     // this is on +2, right child is on -1
     def rotateRightLeft(): AVLTree = {
-        require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 1)
+        require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == -1)
         val Branch(w, a, rChild) = this
-        val Branch(u, lGrandchild, d) = rChild.asInstanceOf[Branch]
+        val rBranch = rChild.asInstanceOf[Branch]
+        val Branch(u, lGrandchild, d) = rBranch
+        rBranch.hasLeftBranch()
         val Branch(z, b, c) = lGrandchild.asInstanceOf[Branch]
         Branch(z, Branch(w, a, b), Branch(u, c, d))
     }.ensuring(res => res.isAVL())
@@ -150,24 +164,36 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         Branch(u, a, Branch(w, b, c))
     }.ensuring(res => res.isAVL())
 
+    private def hasRightBranch() = {
+        require(this.isAVL() && this.balanceFactor == 1)
+    }.ensuring(_ => this.right.isInstanceOf[Branch])
+
     def rotateLeftRight(): AVLTree = {
         require(this.isAlmostAVL() && this.balanceFactor == -2 && this.left.balanceFactor == 1)
         val Branch(w, lChild, d) = this
-        val Branch(u, a, rGrandchild) = lChild.asInstanceOf[Branch]
+        val lBranch = lChild.asInstanceOf[Branch]
+        val Branch(u, a, rGrandchild) = lBranch
+        lBranch.hasRightBranch()
         val Branch(z, b, c) = rGrandchild.asInstanceOf[Branch]
         Branch(z, Branch(u, a, b), Branch(w, c, d))
     }.ensuring(res => res.isAVL())
 
     override def isAVL(): Boolean = this.isAlmostAVL() && this.balanceFactor < 2 && this.balanceFactor > -2
+
+    private def proof(): Unit = {
+        require(this.isAlmostAVL() && this.balanceFactor == 2)
+        assert(this.off())
+    }.ensuring(_ => this.right.balanceFactor == 1 || this.right.balanceFactor == -1)
+
     private def off(): Boolean = {
         if this.balanceFactor == 2 then
             this.right match
                 case Empty => false
-                case z => z.height == 1 || z.height == -1
+                case z => z.balanceFactor == 1 || z.balanceFactor == -1
         else if this.balanceFactor == -2 then
             this.left match
                 case Empty => false
-                case z => z.height == 1 || z.height == -1
+                case z => z.balanceFactor == 1 || z.balanceFactor == -1
         else
             true
     }
