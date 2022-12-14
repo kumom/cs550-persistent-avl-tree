@@ -161,55 +161,34 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         assert(b.isAVL())
         assert(a.isAVL())
         val res = Branch(u, Branch(w, a, b), c)
-        assert(this == Branch(w, a, Branch(u, b, c)))
-        assert(Branch(w, a, Branch(u, b, c)).inorder() == a.inorder() ++ (w :: Branch(u, b, c).inorder()))
-        assert(a.inorder() ++ (w :: Branch(u, b, c).inorder()) == a.inorder() ++ (w :: (b.inorder() ++ (u :: c.inorder()))))
+
         assert(this.inorder() == a.inorder() ++ (w :: (b.inorder() ++ (u :: c.inorder()))))
 
-        assert(res == Branch(u, Branch(w, a, b), c))
-        assert(Branch(u, Branch(w, a, b), c).inorder() == Branch(w, a, b).inorder() ++ (u :: c.inorder()))
-        assert(Branch(w, a, b).inorder() ++ (u :: c.inorder()) == a.inorder() ++ (w :: b.inorder()) ++ (u :: c.inorder()))
         assert(res.inorder() == a.inorder() ++ (w :: b.inorder()) ++ (u :: c.inorder()))
 
         val two = (w :: b.inorder()) ++ (u :: c.inorder())
 
         ListSpecs.appendAssoc(a.inorder(), w :: b.inorder(), u :: c.inorder())
-        assert(a.inorder() ++ (w :: b.inorder()) ++ (u :: c.inorder()) == a.inorder() ++ ((w :: b.inorder()) ++ (u :: c.inorder())))
-        // here is assoc of append
-        assert(a.inorder() ++ (w :: b.inorder()) ++ (u :: c.inorder()) == a.inorder() ++ two)
 
         val one = w :: (b.inorder() ++ (u :: c.inorder()))
 
         assert(res.inorder() == a.inorder() ++ two)
         assert(this.inorder() == a.inorder() ++ one)
-
-        assert(ugly(w, u, b, c))
-        assert(one == two || two == one)
-        assert(a.inorder() ++ one == a.inorder() ++ two)
- 
         assert(this.inorder() == res.inorder())
-        assert(this.isBST())
-        assert(sorted(this.inorder()))
-        assert(sorted(res.inorder()))
-        assert(res.isBST())
-        // remaind what res is
-        assert(res == Branch(u, Branch(w, a, b), c))
-        assert(this.isAlmostAVL())
-        inorderPropMore(Branch(w, a, b))
-        assert(b.inorder().forall(_ > w))
-        assert(sorted(b.inorder()))
+
+        inorderPropMore(this)
         prependOneSorted(w, b.inorder())
         assert(sorted(w :: b.inorder())) // !
 
-        assert(sorted(a.inorder()))
         inorderPropLess(Branch(w, a, b))
-        assert(a.inorder().forall(_ < w))
         appendOneSorted(w, a.inorder())
         assert(sorted(a.inorder() :+ w)) // !
 
         mergeSorted(a.inorder(), w, b.inorder())
         assert(Branch(w, a, b).isBST())
         assert(Branch(w, a, b).isAVL())
+        assert(c.isAVL())
+        assert(res.isBST())
         assert(res.isAlmostAVL())
         assert(res.isAVL())
         res
@@ -278,29 +257,21 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     }.ensuring(res => res.content == this.content)
 }
 
-def inorderSpread(@induct xs: List[BigInt], ys: List[BigInt]): Boolean = (
-    sorted(xs ++ ys) == (
-        sorted(xs) &&
-        sorted(ys) &&
-        (xs.isEmpty || ys.isEmpty || xs.last < ys.head)
-    )
-).holds
-
-def mergeSorted(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = (
-    sorted(xs ++ (y :: ys)) == (
-        sorted(xs :+ y) &&
-        sorted(y :: ys)
-    ) && inorderSpread(xs, y :: ys)
-).holds
+def mergeSorted(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = {
+    require(sorted(xs :+ y) && sorted(y :: ys))
+    sorted(xs ++ (y :: ys))
+}.holds
 
 
 def inorderPropLess(n: AVLTree): Boolean = {
+    require(n.isBST())
     n match
         case Empty => true
         case Branch(v, left, right) => left.inorder().forall(_ < v)
 }.holds
 
 def inorderPropMore(n: AVLTree): Boolean = {
+    require(n.isBST())
     n match
         case Empty => true
         case Branch(v, left, right) => right.inorder().forall(_ > v)
@@ -339,53 +310,3 @@ def syntaxSugar(xs: List[BigInt], x: BigInt): Boolean = {
     (xs :+ x) == xs ++ List(x) && (x :: xs) == (List(x) ++ xs)
 }.holds
 
-def treeAssocLeft(n: AVLTree): Option[(List[BigInt], List[BigInt], List[BigInt])] = {
-    n match {
-        case Empty => None()
-        case Branch(v, left, right) => {
-            left match {
-                case Empty => None()
-                case Branch(lv, ll, lr) => {
-                    val l1 = ll.inorder()
-                    val l2 = lv :: lr.inorder()
-                    val l3 = v :: right.inorder()
-                    ListSpecs.appendAssoc(l1, l2, l3)
-                    Some((l1, l2, l3))
-                }
-            }
-        }
-    }
-}
-
-def treeAssocLeftHolds(n: AVLTree): Boolean = {
-    val opt = treeAssocLeft(n)
-    opt match
-        case Some((l1, l2, l3)) => n.inorder() == l1 ++ (l2 ++ l3)
-        case None() => true
-}.holds
-
-def treeAssocRight(n: AVLTree): Option[(List[BigInt], List[BigInt], List[BigInt])] = {
-    n match {
-        case Empty => None()
-        case Branch(v, left, right) => {
-            right match {
-                case Empty => None()
-                case Branch(rv, rl, rr) => {
-                    val l1 = left.inorder()
-                    val l2 = v :: rl.inorder()
-                    val l3 = rv :: rr.inorder()
-                    ListSpecs.appendAssoc(l1, l2, l3)
-                    // n.inorder() == (l1 ++ l2) ++ l3
-                    Some((l1, l2, l3))
-                }
-            }
-        }
-    }
-}
-
-def treeAssocRightHolds(n: AVLTree): Boolean = {
-    val opt = treeAssocRight(n)
-    opt match
-        case Some((l1, l2, l3)) => n.inorder() == (l1 ++ l2) ++ l3
-        case None() => true
-}.holds
