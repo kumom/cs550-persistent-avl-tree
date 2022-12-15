@@ -103,7 +103,7 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
             assert(resLeft.inorder() ++ (this.v :: this.right.inorder()) == StrictlyOrderedList.inorderInsert(this.inorder(), v))
             
             val finalRes = res.balanced()
-            assert(finalRes.height <= this.height + 1)
+            assert(res.height <= this.height + 1)
 
             finalRes
         }
@@ -121,7 +121,7 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
 
             finalRes
         }
-    }.ensuring(res => res.isAVL() && res.height <= this.height + 1 && res.height >= this.height - 1 && (res.inorder() == StrictlyOrderedList.inorderInsert(this.inorder(), v)))
+    }.ensuring(res => res.isAVL() && res.height <= this.height + 1 && res.height >= this.height - 1 && res.inorder() == StrictlyOrderedList.inorderInsert(this.inorder(), v))
 
     override def delete(v: BigInt): AVLTree = {
         require(this.isAVL())
@@ -135,13 +135,35 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
                 // move value from it into root of result
                 val left = this.left.asInstanceOf[Branch]
                 val max = left.max()
-                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max has no right child
+                val resLeft = left.delete(max)
+                assert(resLeft == Empty || resLeft.inorder() == StrictlyOrderedList.deleteFirst(resLeft.inorder(), max))
+                val res = Branch(max, resLeft, this.right)
+                StrictlyOrderedList.deleteEqualLemma(this.left.inorder(), this.v, this.right.inorder(), v)
+
+                assert(resLeft.inorder() == StrictlyOrderedList.deleteFirst(resLeft.inorder(), max))
+                assert(StrictlyOrderedList.isInorder(resLeft.inorder()))
+
+                assert(res.isBST())
+                assert(res.isAlmostAVL())
+                res.balanced() // left.delete(max) is simple since max has no right child
             }
-        } else if v < this.v then
-            Branch(this.v, this.left.delete(v), this.right).balanced()
-        else 
-            Branch(this.v, this.left, this.right.delete(v)).balanced()
-    }.ensuring(res => res.isAVL() && res.height <= this.height && res.height >= this.height - 1)
+        } else if v < this.v then {
+            val res = Branch(this.v, this.left.delete(v), this.right)
+            assert(StrictlyOrderedList.deleteSmallerLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+            assert(res.isAlmostAVL())
+            
+            val finalRes = res.balanced()
+            finalRes
+        }
+        else {
+            val res = Branch(this.v, this.left, this.right.delete(v))
+            assert(StrictlyOrderedList.deleteBiggerLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+            assert(res.isAlmostAVL())
+
+            val finalRes = res.balanced()
+            finalRes
+        }
+    }.ensuring(res => res.isAVL() && res.height <= this.height && res.height >= this.height - 1 && res.inorder() == StrictlyOrderedList.deleteFirst(this.inorder(), v))
 
     def max(): BigInt = {
         this.right match {
@@ -167,7 +189,7 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
                 this.rotateMinus()
         } else
             this
-    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder() && res.height <= this.height && res.height >= this.height - 1)
 
     def rotatePlus(): AVLTree = {
         require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 0)
