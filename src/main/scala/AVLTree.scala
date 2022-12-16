@@ -16,7 +16,10 @@ sealed abstract class AVLTree {
         this
     }
 
-    def has(v: BigInt): Boolean
+    def has(v: BigInt): Boolean = {
+        require(this.isAVL())
+        false
+    }
 
     // impl only to make stainless happy
     def delete(v: BigInt): AVLTree = {
@@ -75,14 +78,22 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     override def height: BigInt = {
         maxBigInt(left.height, right.height) + 1
     }.ensuring(res => res >= -1)
+
     override def has(v: BigInt): Boolean = {
+        require(this.isAVL())
         if this.v == v then
-            true 
-        else if v < this.v then
-            left.has(v)
-        else
-            right.has(v)
-    }
+            true
+        else if v < this.v then {
+            val res = left.has(v)
+            StrictlyOrderedList.smaller(left.inorder(), this.v, right.inorder(), v)
+            res
+        }
+        else {
+            val res = right.has(v)
+            StrictlyOrderedList.bigger(left.inorder(), this.v, right.inorder(), v)
+            res
+        }
+    }.ensuring(res => res == this.inorder().contains(v))
 
     override def insert(v: BigInt): AVLTree = {
         require(this.isAVL())
