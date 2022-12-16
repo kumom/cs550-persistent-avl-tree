@@ -1,4 +1,12 @@
+import stainless.collection._
+import stainless.proof._
+import stainless.lang._
+import stainless.annotation._
+// import StrictlyOrderedList._
+
 sealed abstract class AVLTree {
+    def content: Set[BigInt]
+
     def balanceFactor: BigInt
     def height: BigInt
 
@@ -20,15 +28,20 @@ sealed abstract class AVLTree {
     def balanced(): AVLTree = {
         require(this.isAlmostAVL())
         this
-    }
+    }.ensuring(this.inorder() == _.inorder())
 
+    // for verification
     def isAVL(): Boolean
     def isAlmostAVL(): Boolean
     
     def isBST(): Boolean
+
+    def inorder(): List[BigInt]
 }
 
 case object Empty extends AVLTree {
+    override def content: Set[BigInt] = Set.empty
+
     override def balanceFactor: BigInt = 0
     override def height: BigInt = {
         BigInt(-1)
@@ -46,6 +59,8 @@ case object Empty extends AVLTree {
     override def isAVL(): Boolean = true
 
     override def isBST(): Boolean = true
+
+    override def inorder(): List[BigInt] = List.empty[BigInt]
 }
 
 def maxBigInt(a: BigInt, b: BigInt): BigInt = {
@@ -53,7 +68,10 @@ def maxBigInt(a: BigInt, b: BigInt): BigInt = {
 }
 
 case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
+    override def content: Set[BigInt] = left.content ++ Set(v) ++ right.content
+
     override def balanceFactor: BigInt = right.height - left.height
+    
     override def height: BigInt = {
         maxBigInt(left.height, right.height) + 1
     }.ensuring(res => res >= -1)
@@ -68,13 +86,42 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
 
     override def insert(v: BigInt): AVLTree = {
         require(this.isAVL())
-        if this.v == v then
+        if this.v == v then {
+            assert(StrictlyOrderedList.insertEqualLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+            assert(this.left.inorder() ++ (this.v :: this.right.inorder()) == StrictlyOrderedList.inorderInsert(this.inorder(), v))
             this
-        else if v < this.v then
-            Branch(this.v, this.left.insert(v), this.right).balanced()
-        else
-            Branch(this.v, this.left, this.right.insert(v)).balanced()
-    }.ensuring(res => res.isAVL() && res.height <= this.height + 1 && res.height >= this.height)
+        }
+        else if v < this.v then {
+            val resLeft = this.left.insert(v)
+            val res = Branch(this.v, resLeft, this.right)
+            // we need: res.isBST()
+            // we know: this.right.isBST()
+            assert(res.right.isBST())
+            assert(res.left.isBST())
+
+            assert(StrictlyOrderedList.insertSmallerLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+            assert(resLeft.inorder() ++ (this.v :: this.right.inorder()) == StrictlyOrderedList.inorderInsert(this.inorder(), v))
+            
+            val finalRes = res.balanced()
+            assert(res.height <= this.height + 1)
+
+            finalRes
+        }
+        else {
+            val resRight = this.right.insert(v)
+            val res = Branch(this.v, this.left, resRight)
+            assert(res.right.isBST())
+            assert(res.left.isBST())
+
+            assert(StrictlyOrderedList.insertBiggerLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+            assert(this.left.inorder() ++ (this.v :: resRight.inorder()) == StrictlyOrderedList.inorderInsert(this.inorder(), v))
+
+            val finalRes = res.balanced()
+            assert(finalRes.height <= this.height + 1)
+
+            finalRes
+        }
+    }.ensuring(res => res.isAVL() && res.height <= this.height + 1 && res.height >= this.height - 1 && res.inorder() == StrictlyOrderedList.inorderInsert(this.inorder(), v))
 
     override def delete(v: BigInt): AVLTree = {
         require(this.isAVL())
@@ -87,21 +134,85 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
                 // find biggest in left subtree -> it has no right child
                 // move value from it into root of result
                 val left = this.left.asInstanceOf[Branch]
-                val max = left.max()
-                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max has no right child
-            }
-        } else if v < this.v then
-            Branch(this.v, this.left.delete(v), this.right).balanced()
-        else 
-            Branch(this.v, this.left, this.right.delete(v)).balanced()
-    }.ensuring(res => res.isAVL() && res.height <= this.height && res.height >= this.height - 1)
+                val (max, resLeft) = left.maxSplit()
+                val res = Branch(max, resLeft, this.right)
+                // we need res.isBST
+                assert(res.inorder() == resLeft.inorder() ++ (max :: this.right.inorder()))
+                StrictlyOrderedList.concatElem(resLeft.inorder(), max, this.right.inorder())
+                assert(res.inorder() == (resLeft.inorder() :+ max) ++ this.right.inorder())
+                assert(resLeft.inorder() :+ max == left.inorder())
+                assert(res.inorder() == left.inorder() ++ right.inorder())
+                // we can show that res.inorder() == left.inorder() ++ right.inorder()
+                // how to show that it's sorted?
+                sortedWithoutRoot(this.left.inorder(), this.v, this.right.inorder())
+                assert(StrictlyOrderedList.isInorder(left.inorder() ++ right.inorder()))
 
-    def max(): BigInt = {
-        this.right match {
-            case Empty => v
-            case b: Branch => b.max()
+                assert(res.height <= this.height)
+                assert(res.isBST())
+
+                assert(StrictlyOrderedList.deleteEqualLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+
+                val finalRes = res.balanced()
+                assert(finalRes.isAVL())
+                assert(finalRes.height <= this.height)
+                assert(finalRes.height >= this.height - 1)
+                assert(finalRes.inorder() == StrictlyOrderedList.deleteFirst(this.inorder(), v))
+                finalRes
+            }
+        } else if v < this.v then {
+            val res = Branch(this.v, this.left.delete(v), this.right)
+            assert(StrictlyOrderedList.deleteSmallerLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+            assert(res.isAlmostAVL())
+            
+            val finalRes = res.balanced()
+            finalRes
         }
-    }
+        else {
+            val res = Branch(this.v, this.left, this.right.delete(v))
+            assert(StrictlyOrderedList.deleteBiggerLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+            assert(res.isAlmostAVL())
+
+            val finalRes = res.balanced()
+            finalRes
+        }
+    }.ensuring(res => res.isAVL() && res.height <= this.height && res.height >= this.height - 1 && res.inorder() == StrictlyOrderedList.deleteFirst(this.inorder(), v))
+
+    def maxSplit(): (BigInt, AVLTree) = {
+        require(this.isAVL())
+        this.right match {
+            case Empty => (v, this.left)
+            case b: Branch => {
+                val (max, tree) = b.maxSplit()
+                val resTree = Branch(this.v, this.left, tree)
+                assert(tree.inorder() :+ max == b.inorder()) // b is this.right
+                // StrictlyOrderedList.bigger(tree.inorder(), max, b.inorder())
+                assert(resTree.inorder() == this.left.inorder() ++ (this.v :: tree.inorder()))
+                StrictlyOrderedList.concatElem(this.left.inorder(), this.v, tree.inorder())
+                assert(resTree.inorder() == (this.left.inorder() :+ this.v) ++ tree.inorder())
+            
+
+                assert(resTree.inorder() :+ max == ((this.left.inorder() :+ this.v) ++ tree.inorder()) :+ max)
+                // (xs ++ ys) :+ z == xs ++ (ys := z)
+                mixApp(this.left.inorder() :+ this.v, tree.inorder(), max)
+                assert(resTree.inorder() :+ max == (this.left.inorder() :+ this.v) ++ (tree.inorder() :+ max))
+
+                assert(resTree.inorder() :+ max == (this.left.inorder() :+ this.v) ++ b.inorder())
+                
+                assert(this.inorder() == this.left.inorder() ++ (this.v :: b.inorder()))
+                StrictlyOrderedList.concatElem(this.left.inorder(), this.v, b.inorder())
+                assert(this.inorder() == (this.left.inorder() :+ this.v) ++ b.inorder())
+                assert(StrictlyOrderedList.isInorder(resTree.inorder() :+ max))
+                assert(dropLast(resTree.inorder(), max))
+                // why is is almostAVL?
+                assert(resTree.isBST())
+                assert(resTree.left.isAVL() && resTree.right.isAVL())
+                assert(resTree.balanceFactor >= -2)
+                assert(resTree.balanceFactor <= 2)
+                (max, resTree.balanced())
+            }
+        }
+    }.ensuring(res => res._2.isAVL() && res._2.inorder() :+ res._1 == this.inorder() && res._2.height <= this.height && res._2.height >= this.height - 1)
+
     override def balanced(): AVLTree = {
         require(this.isAlmostAVL())
         if this.balanceFactor == 2 then {
@@ -120,7 +231,7 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
                 this.rotateMinus()
         } else
             this
-    }.ensuring(res => res.isAVL())
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder() && res.height <= this.height && res.height >= this.height - 1)
 
     def rotatePlus(): AVLTree = {
         require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 0)
@@ -129,16 +240,46 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         val Branch(u, a, x) = this
         // argument: just simple rotation is enough
         val Branch(v, b, c) = x.asInstanceOf[Branch]
-        Branch(v, Branch(u, a, b), c)
-    }.ensuring(res => res.isAVL())
+        val res = Branch(v, Branch(u, a, b), c)
+
+        assert(this.inorder() == a.inorder() ++ (u :: (b.inorder() ++ (v :: c.inorder()))))
+        assert(res.inorder() == (a.inorder() ++ (u :: b.inorder())) ++ (v :: c.inorder()))
+        ListSpecs.appendAssoc(a.inorder(), u :: b.inorder(), v :: c.inorder())
+        assert(res.inorder() == this.inorder())
+        assert(StrictlyOrderedList.isInorder(res.inorder()))
+        res.bstTrans()
+        assert(res.left.isAVL() && res.right.isAVL())
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.isAlmostAVL())
+
+        res
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
 
     // this is +2, right child is +1
     def rotateLeft(): AVLTree = {
         require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 1)
         val Branch(w, a, rChild) = this
         val Branch(u, b, c) = rChild.asInstanceOf[Branch]
-        Branch(u, Branch(w, a, b), c)
-    }.ensuring(res => res.isAVL())
+        assert(b.isAVL())
+        assert(a.isAVL())
+        val res = Branch(u, Branch(w, a, b), c)
+
+        assert(this.inorder() == a.inorder() ++ (w :: (b.inorder() ++ (u :: c.inorder()))))
+        assert(res.inorder() == a.inorder() ++ (w :: b.inorder()) ++ (u :: c.inorder()))
+        
+        ListSpecs.appendAssoc(a.inorder(), w :: b.inorder(), u :: c.inorder())
+        assert(this.inorder() == res.inorder())
+        assert(StrictlyOrderedList.isInorder(res.inorder()))
+        res.bstTrans()
+        assert(res.left.isBST())
+        assert(res.left.isAVL())
+        assert(res.right.isBST())
+        assert(res.right.isAVL())
+        // this.isBST() && this.balanceFactor <= 2 && this.balanceFactor >= -2 && this.left.isAVL() && this.right.isAVL()
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.isAlmostAVL())
+        res
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
 
     private def hasLeftBranch() = {
         require(this.isAVL() && this.balanceFactor == -1)
@@ -152,26 +293,74 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         val Branch(u, lGrandchild, d) = rBranch
         rBranch.hasLeftBranch()
         val Branch(z, b, c) = lGrandchild.asInstanceOf[Branch]
-        Branch(z, Branch(w, a, b), Branch(u, c, d))
-    }.ensuring(res => res.isAVL())
+        val res = Branch(z, Branch(w, a, b), Branch(u, c, d))
+        // stuff to remember
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.left.isBST() ==> res.left.isAVL())
+        assert(res.right.isBST() ==> res.right.isAVL())
+        //
+
+        assert(this.inorder() == a.inorder() ++ (w :: ((b.inorder() ++ (z :: c.inorder())) ++ (u :: d.inorder()))))
+        assert(res.inorder() == (a.inorder() ++ (w :: b.inorder())) ++ (z :: (c.inorder() ++ (u :: d.inorder()))))
+        ListSpecs.appendAssoc(a.inorder(), w :: b.inorder(), (z :: (c.inorder() ++ (u :: d.inorder()))))
+        assert((a.inorder() ++ (w :: b.inorder())) ++ (z :: (c.inorder() ++ (u :: d.inorder()))) == a.inorder() ++ ((w :: b.inorder()) ++ (z :: (c.inorder() ++ (u :: d.inorder())))))
+
+        ListSpecs.appendAssoc(a.inorder(), w :: b.inorder(), z :: c.inorder())
+        ListSpecs.appendAssoc(w :: b.inorder(), z :: c.inorder(), u :: d.inorder())
+        assert(this.inorder() == res.inorder())
+
+        res.bstTrans()
+        assert(res.left.isBST())
+        assert(res.right.isBST())
+        assert(res.left.isAVL())
+        assert(res.right.isAVL())
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2) // remainder
+        assert(res.isAlmostAVL())
+
+        res
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
 
     def rotateMinus(): AVLTree = {
         require(this.isAlmostAVL() && this.balanceFactor == -2 && this.left.balanceFactor == 0)
         assert(this.right.height >= -1)
         assert(this.left.height >= 1)
         val Branch(u, x, c) = this
-        // argument: just simple rotation is enough
         val Branch(v, a, b) = x.asInstanceOf[Branch]
-        Branch(v, a, Branch(u, b, c))
-    }.ensuring(res => res.isAVL())
+        val res = Branch(v, a, Branch(u, b, c))
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.left.isBST() ==> res.left.isAVL())
+        assert(res.right.isBST() ==> res.right.isAVL())
+
+        assert(this.inorder() == (a.inorder() ++ (v :: b.inorder())) ++ (u :: c.inorder()))
+        assert(res.inorder() == a.inorder() ++ (v :: (b.inorder() ++ (u :: c.inorder()))))
+        ListSpecs.appendAssoc(a.inorder(), v :: b.inorder(), u :: c.inorder())
+        assert(res.inorder() == this.inorder())
+        assert(StrictlyOrderedList.isInorder(res.inorder()))
+        res.bstTrans()
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.isAlmostAVL())
+        res
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
 
 
     def rotateRight(): AVLTree = {
         require(this.isAlmostAVL() && this.balanceFactor == -2 && this.left.balanceFactor == -1)
         val Branch(w, lChild, c) = this
         val Branch(u, a, b) = lChild.asInstanceOf[Branch]
-        Branch(u, a, Branch(w, b, c))
-    }.ensuring(res => res.isAVL())
+        val res = Branch(u, a, Branch(w, b, c))
+        assert(this.inorder() == (a.inorder() ++ (u :: b.inorder())) ++ (w :: c.inorder()))
+        assert(res.inorder() == a.inorder() ++ (u :: (b.inorder() ++ (w :: c.inorder()))))
+        ListSpecs.appendAssoc(a.inorder(), u :: b.inorder(), w :: c.inorder())
+
+        assert(res.inorder() == this.inorder())
+        assert(res.isBST())
+        res.bstTrans()
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.left.isAVL())
+        assert(res.right.isAVL())
+        assert(res.isAlmostAVL())
+        res
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
 
     private def hasRightBranch() = {
         require(this.isAVL() && this.balanceFactor == 1)
@@ -184,33 +373,272 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         val Branch(u, a, rGrandchild) = lBranch
         lBranch.hasRightBranch()
         val Branch(z, b, c) = rGrandchild.asInstanceOf[Branch]
-        Branch(z, Branch(u, a, b), Branch(w, c, d))
-    }.ensuring(res => res.isAVL())
+        val res = Branch(z, Branch(u, a, b), Branch(w, c, d))
+        // stuff to remember
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.left.isBST() ==> res.left.isAVL())
+        assert(res.right.isBST() ==> res.right.isAVL())
+        //
+        assert(this.inorder() == (a.inorder() ++ (u :: (b.inorder() ++ (z :: c.inorder())))) ++ (w :: d.inorder()))
+        assert(res.inorder() == (a.inorder() ++ (u :: b.inorder())) ++ (z :: (c.inorder() ++ (w :: d.inorder()))))
 
-    override def isAVL(): Boolean = this.left.isAVL() && this.right.isAVL() && this.balanceFactor < 2 && this.balanceFactor > -2
+        appendAssocFour(a.inorder(), u :: b.inorder(), z :: c.inorder(), w :: d.inorder())
+        ListSpecs.appendAssoc(a.inorder(), u :: (b.inorder() ++ (z :: c.inorder())), w :: d.inorder())
+        assert((a.inorder() ++ (u :: b.inorder())) ++ (z :: (c.inorder() ++ (w :: d.inorder()))) == (a.inorder() ++ (u :: b.inorder())) ++ (z :: (c.inorder()) ++ (w :: d.inorder())))
+        assert(res.inorder() == (a.inorder() ++ (u :: b.inorder())) ++ (z :: (c.inorder()) ++ (w :: d.inorder())))
+        assert(res.inorder() == a.inorder() ++ ((u :: b.inorder()) ++ (z :: (c.inorder()) ++ (w :: d.inorder()))))
+
+        assert(this.inorder() == (a.inorder() ++ (u :: (b.inorder() ++ (z :: c.inorder())))) ++ (w :: d.inorder()))
+        // ListSpecs.appendAssoc(a.inorder(), u :: (b.inorder() ++ (z :: c.inorder())), w :: d.inorder())
+        // assert((a.inorder() ++ (u :: b.inorder())) ++ (z :: (c.inorder()) ++ (w :: d.inorder())) == (a.inorder() ++ (u :: b.inorder())) ++ (z :: (c.inorder())) ++ (w :: d.inorder()))
+
+        ListSpecs.appendAssoc(a.inorder(), u :: b.inorder(), z :: c.inorder())
+        ListSpecs.appendAssoc(u :: b.inorder(), z :: c.inorder(), w :: d.inorder())
+        assert(this.inorder() == res.inorder())
+
+        res.bstTrans()
+        assert(res.left.isBST())
+        assert(res.right.isBST())
+        assert(res.left.isAVL())
+        assert(res.right.isAVL())
+        assert(res.balanceFactor <= 2 && res.balanceFactor >= -2) // remainder
+        assert(res.isAlmostAVL())
+
+        res
+    }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
+
+    override def isAVL(): Boolean = {
+        this.isAlmostAVL() && this.balanceFactor < 2 && this.balanceFactor > -2
+    }
 
     override def isAlmostAVL(): Boolean = {
-        this.balanceFactor <= 2 && this.balanceFactor >= -2 && this.left.isAVL() && this.right.isAVL()
+        this.isBST() && this.balanceFactor <= 2 && this.balanceFactor >= -2 && this.left.isAVL() && this.right.isAVL()
     }
     override def isBST(): Boolean = {
-        true
-        // if !this.left.isBST() || !this.right.isBST() then
-        //     false 
-        // else if this.left == Empty && this.right == Empty then
-        //     true
-        // else if this.left == Empty && this.right != Empty then {
-        //     val Branch(v2, _, _) = this.right: @unchecked
-        //     v < v2
-        // }
-        // else if this.left != Empty && this.right == Empty then {
-        //     val Branch(v2, _, _) = this.left: @unchecked
-        //     v > v2
-        // }
-        // else {
-        //     val Branch(v1, _, _) = this.left: @unchecked
-        //     val Branch(v2, _, _) = this.right: @unchecked
-        //     v1 < v && v < v2
-        // }
+        StrictlyOrderedList.isInorder(this.inorder())
     }
-    
+
+    override def inorder(): List[BigInt] = {
+        this.left.inorder() ++ (this.v :: this.right.inorder())
+    }.ensuring(res => res.content == this.content)
+
+    def bstTrans(): Boolean = {
+        require(this.isBST())
+        this.left.isBST() && this.right.isBST()
+    }.holds because {
+        StrictlyOrderedList.inorderSpread(this.left.inorder(), this.v, this.right.inorder())
+    }
+}
+
+def mixApp(@induct xs: List[BigInt], ys : List[BigInt], z: BigInt): Boolean = {
+    (xs ++ ys) :+ z == xs ++ (ys :+ z)
+}.holds
+
+def dropLast(@induct xs: List[BigInt], y: BigInt): Boolean = {
+    require(StrictlyOrderedList.isInorder(xs :+ y))
+    StrictlyOrderedList.isInorder(xs)
+}.holds
+
+def sortedWithoutRoot(xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = {
+    require(StrictlyOrderedList.isInorder(xs ++ (y :: ys)))
+    StrictlyOrderedList.inorderSpread(xs, y, ys)
+    assert(StrictlyOrderedList.isInorder(xs :+ y))
+    assert(StrictlyOrderedList.isInorder(y :: ys))
+    assert(StrictlyOrderedList.isInorder(xs) && StrictlyOrderedList.isInorder(ys))
+    StrictlyOrderedList.isInorder(xs ++ ys)
+}.holds because {
+    StrictlyOrderedList.inorderSpread(xs, ys)
+}
+
+def appendAssocFour(@induct as: List[BigInt], bs: List[BigInt], cs: List[BigInt], ds: List[BigInt]): Boolean = {
+    val x = as ++ (bs ++ (cs ++ ds))
+    val y = as ++ ((bs ++ cs) ++ ds)
+    val z = (as ++ bs) ++ (cs ++ ds)
+    val w = (as ++ (bs ++ cs)) ++ ds
+    x == y && x == z && x == w && y == z && y == w && z == w
+}.holds because {
+    ListSpecs.appendAssoc(as, bs, cs) && ListSpecs.appendAssoc (as, bs, ds) && ListSpecs.appendAssoc(bs, cs, ds) && ListSpecs.appendAssoc(as, cs, ds)
+}
+
+def prependOneSorted(x: BigInt, @induct a: List[BigInt]): Boolean = {
+    require(StrictlyOrderedList.isInorder(a) && (a.isEmpty || a.head > x))
+    StrictlyOrderedList.isInorder(x :: a)
+}.holds
+
+/* Copyright 2009-2021 EPFL, Lausanne */
+/* Written by Clément Burgelin */
+/* https://github.com/epfl-lara/bolts/blob/master/data-structures/trees/redblack/StrictlyOrderedList.scala */
+
+object StrictlyOrderedList {
+    // Some helpers
+    def concatLast(@induct left: List[BigInt], right: List[BigInt]): Boolean = {
+        right.nonEmpty ==> ((left ++ right).last == right.last)
+    }.holds
+
+    def addLast(left: List[BigInt], elem: BigInt): Boolean = {
+        (left :+ elem) == (left ++ List(elem))
+    }.holds
+
+    def concatElem(@induct left: List[BigInt], elem: BigInt, right: List[BigInt]): Boolean = {
+        (left ++ (elem :: right)) == ((left :+ elem) ++ right)
+    }.holds
+
+    // StrictlyOrderedList is a strictly sorted List
+    def isInorder(l: List[BigInt]): Boolean = l match {
+        case Cons(h1, Cons(h2, _)) if(h1 >= h2) => false
+        case Cons(_, t) => isInorder(t)
+        case _ => true
+    }
+
+    // Validity spreads to sub-parts
+    def inorderSpread(@induct xs: List[BigInt], y: BigInt): Boolean = (
+        isInorder(xs :+ y) == (
+            isInorder(xs) &&
+            (xs.isEmpty || xs.last < y)
+        )
+    ).holds
+
+    def inorderSpread(@induct xs: List[BigInt], ys: List[BigInt]): Boolean = (
+        isInorder(xs ++ ys) == (
+            isInorder(xs) &&
+            isInorder(ys) &&
+            (xs.isEmpty || ys.isEmpty || xs.last < ys.head)
+        )
+    ).holds
+
+    def inorderSpread(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = (
+        isInorder(xs ++ (y :: ys)) == (
+            isInorder(xs :+ y) &&
+            isInorder(y :: ys)
+        ) && inorderSpread(xs, y :: ys)
+    ).holds
+
+    def inorderSpread(x: BigInt, @induct xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = (
+        isInorder((x :: xs) ++ (y :: ys)) == (
+            x < y &&
+            isInorder(x :: xs) &&
+            isInorder(xs :+ y) &&
+            isInorder(y :: ys)
+        ) && inorderSpread(x :: xs, y, ys)
+    ).holds
+
+    // Inequalities and contains
+    def bigger(@induct xs: List[BigInt], y: BigInt, e: BigInt): Boolean = {
+        require(isInorder(xs :+ y) && y <= e)
+        xs.forall(_ < e) && !xs.contains(e)
+    }.holds
+
+    def bigger(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && y <= e)
+        inorderSpread(xs, y, ys)
+        bigger(xs, y, e)
+        xs.forall(_ < e) && !xs.contains(e)
+    }.holds
+
+    def smaller(y: BigInt, @induct ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(y :: ys) && e <= y)
+        ys.forall(e < _) && !ys.contains(e)
+    }.holds
+
+    def smaller(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && e <= y)
+        inorderSpread(xs, y, ys)
+        smaller(y, ys, e)
+        ys.forall(e < _) && !ys.contains(e)
+    }.holds
+
+    def contains(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)))
+        val l = xs ++ (y :: ys)
+
+        if(e < y) {
+            smaller(xs, y, ys, e) && (l.contains(e) == xs.contains(e))
+        } else {
+            bigger(xs, y, ys, e) && (l.contains(e) == (y :: ys).contains(e))
+        }
+    }
+
+    // Insert
+    def inorderInsert(l: List[BigInt], e: BigInt): List[BigInt] = {
+        require(isInorder(l))
+        decreases(l.length)
+        l match {
+            case Nil() => Cons(e, Nil())
+            case Cons(h, t) if(h == e) => l
+            case Cons(h, t) if(e < h) => Cons(e, l)
+            case Cons(h, t) => Cons(h, inorderInsert(t, e))
+        }
+    }.ensuring(res =>
+        isInorder(res) &&
+        (res.content == (l.content + e))
+    )
+
+    def insertLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)))
+        inorderInsert(xs ++ (y :: ys), e) == (
+            if(e < y)
+                inorderInsert(xs, e) ++ (y :: ys)
+            else
+                xs ++ inorderInsert(y :: ys, e)
+        )
+    }.holds
+
+    def insertSmallerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && e < y)
+        inorderInsert(xs ++ (y :: ys), e) == (inorderInsert(xs, e) ++ (y :: ys))
+    }.holds
+
+    def insertEqualLemma(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && y == e)
+        check(insertBiggerLemma(xs, y, ys, e))
+        inorderInsert(xs ++ (y :: ys), e) == (xs ++ (y :: ys))
+    }.holds
+
+    def insertBiggerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && y <= e)
+        inorderInsert(xs ++ (y :: ys), e) == (xs ++ inorderInsert(y :: ys, e))
+    }.holds
+
+    // Delete
+    def deleteFirst(@induct l: List[BigInt], e: BigInt): List[BigInt] = {
+        require(isInorder(l))
+        l match {
+            case Cons(h, t) if(h == e) => t
+            case Cons(h, t) => Cons(h, deleteFirst(t, e))
+            case _ => l
+        }
+    }.ensuring(res =>
+        isInorder(res) &&
+        (if(l.contains(e)) res.size == l.size - 1 else res == l)
+    )
+
+    def deleteFirstLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)))
+        deleteFirst(xs ++ (y :: ys), e) == {
+            contains(xs, y, ys, e)
+            if(e < y) {
+                deleteFirst(xs, e) ++ (y :: ys)
+            } else {
+                xs ++ deleteFirst(y :: ys, e)
+            }
+        }
+    }.holds
+
+    def deleteSmallerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && e < y)
+        check(smaller(y, ys, e))
+        deleteFirst(xs ++ (y :: ys), e) == (deleteFirst(xs, e) ++ (y :: ys))
+    }.holds
+
+    def deleteEqualLemma(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && y == e)
+        check(deleteBiggerLemma(xs, y, ys, e))
+        deleteFirst(xs ++ (y :: ys), e) == (xs ++ ys)
+    }.holds
+
+    def deleteBiggerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && y <= e)
+        check(bigger(xs, y, e))
+        deleteFirst(xs ++ (y :: ys), e) == (xs ++ deleteFirst(y :: ys, e))
+    }.holds
 }
