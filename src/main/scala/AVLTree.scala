@@ -134,18 +134,30 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
                 // find biggest in left subtree -> it has no right child
                 // move value from it into root of result
                 val left = this.left.asInstanceOf[Branch]
-                val max = left.max()
-                val resLeft = left.delete(max)
-                assert(resLeft == Empty || resLeft.inorder() == StrictlyOrderedList.deleteFirst(resLeft.inorder(), max))
+                val (max, resLeft) = left.maxSplit()
                 val res = Branch(max, resLeft, this.right)
-                StrictlyOrderedList.deleteEqualLemma(this.left.inorder(), this.v, this.right.inorder(), v)
+                // we need res.isBST
+                assert(res.inorder() == resLeft.inorder() ++ (max :: this.right.inorder()))
+                StrictlyOrderedList.concatElem(resLeft.inorder(), max, this.right.inorder())
+                assert(res.inorder() == (resLeft.inorder() :+ max) ++ this.right.inorder())
+                assert(resLeft.inorder() :+ max == left.inorder())
+                assert(res.inorder() == left.inorder() ++ right.inorder())
+                // we can show that res.inorder() == left.inorder() ++ right.inorder()
+                // how to show that it's sorted?
+                sortedWithoutRoot(this.left.inorder(), this.v, this.right.inorder())
+                assert(StrictlyOrderedList.isInorder(left.inorder() ++ right.inorder()))
 
-                assert(resLeft.inorder() == StrictlyOrderedList.deleteFirst(resLeft.inorder(), max))
-                assert(StrictlyOrderedList.isInorder(resLeft.inorder()))
-
+                assert(res.height <= this.height)
                 assert(res.isBST())
-                assert(res.isAlmostAVL())
-                res.balanced() // left.delete(max) is simple since max has no right child
+
+                assert(StrictlyOrderedList.deleteEqualLemma(this.left.inorder(), this.v, this.right.inorder(), v))
+
+                val finalRes = res.balanced()
+                assert(finalRes.isAVL())
+                assert(finalRes.height <= this.height)
+                assert(finalRes.height >= this.height - 1)
+                assert(finalRes.inorder() == StrictlyOrderedList.deleteFirst(this.inorder(), v))
+                finalRes
             }
         } else if v < this.v then {
             val res = Branch(this.v, this.left.delete(v), this.right)
@@ -165,12 +177,42 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         }
     }.ensuring(res => res.isAVL() && res.height <= this.height && res.height >= this.height - 1 && res.inorder() == StrictlyOrderedList.deleteFirst(this.inorder(), v))
 
-    def max(): BigInt = {
+    def maxSplit(): (BigInt, AVLTree) = {
+        require(this.isAVL())
         this.right match {
-            case Empty => v
-            case b: Branch => b.max()
+            case Empty => (v, this.left)
+            case b: Branch => {
+                val (max, tree) = b.maxSplit()
+                val resTree = Branch(this.v, this.left, tree)
+                assert(tree.inorder() :+ max == b.inorder()) // b is this.right
+                // StrictlyOrderedList.bigger(tree.inorder(), max, b.inorder())
+                assert(resTree.inorder() == this.left.inorder() ++ (this.v :: tree.inorder()))
+                StrictlyOrderedList.concatElem(this.left.inorder(), this.v, tree.inorder())
+                assert(resTree.inorder() == (this.left.inorder() :+ this.v) ++ tree.inorder())
+            
+
+                assert(resTree.inorder() :+ max == ((this.left.inorder() :+ this.v) ++ tree.inorder()) :+ max)
+                // (xs ++ ys) :+ z == xs ++ (ys := z)
+                mixApp(this.left.inorder() :+ this.v, tree.inorder(), max)
+                assert(resTree.inorder() :+ max == (this.left.inorder() :+ this.v) ++ (tree.inorder() :+ max))
+
+                assert(resTree.inorder() :+ max == (this.left.inorder() :+ this.v) ++ b.inorder())
+                
+                assert(this.inorder() == this.left.inorder() ++ (this.v :: b.inorder()))
+                StrictlyOrderedList.concatElem(this.left.inorder(), this.v, b.inorder())
+                assert(this.inorder() == (this.left.inorder() :+ this.v) ++ b.inorder())
+                assert(StrictlyOrderedList.isInorder(resTree.inorder() :+ max))
+                assert(dropLast(resTree.inorder(), max))
+                // why is is almostAVL?
+                assert(resTree.isBST())
+                assert(resTree.left.isAVL() && resTree.right.isAVL())
+                assert(resTree.balanceFactor >= -2)
+                assert(resTree.balanceFactor <= 2)
+                (max, resTree.balanced())
+            }
         }
-    }
+    }.ensuring(res => res._2.isAVL() && res._2.inorder() :+ res._1 == this.inorder() && res._2.height <= this.height && res._2.height >= this.height - 1)
+
     override def balanced(): AVLTree = {
         require(this.isAlmostAVL())
         if this.balanceFactor == 2 then {
@@ -314,6 +356,8 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
         assert(res.isBST())
         res.bstTrans()
         assert(res.balanceFactor <= 2 && res.balanceFactor >= -2)
+        assert(res.left.isAVL())
+        assert(res.right.isAVL())
         assert(res.isAlmostAVL())
         res
     }.ensuring(res => res.isAVL() && res.inorder() == this.inorder())
@@ -386,6 +430,25 @@ case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
     }
 }
 
+def mixApp(@induct xs: List[BigInt], ys : List[BigInt], z: BigInt): Boolean = {
+    (xs ++ ys) :+ z == xs ++ (ys :+ z)
+}.holds
+
+def dropLast(@induct xs: List[BigInt], y: BigInt): Boolean = {
+    require(StrictlyOrderedList.isInorder(xs :+ y))
+    StrictlyOrderedList.isInorder(xs)
+}.holds
+
+def sortedWithoutRoot(xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = {
+    require(StrictlyOrderedList.isInorder(xs ++ (y :: ys)))
+    StrictlyOrderedList.inorderSpread(xs, y, ys)
+    assert(StrictlyOrderedList.isInorder(xs :+ y))
+    assert(StrictlyOrderedList.isInorder(y :: ys))
+    assert(StrictlyOrderedList.isInorder(xs) && StrictlyOrderedList.isInorder(ys))
+    StrictlyOrderedList.isInorder(xs ++ ys)
+}.holds because {
+    StrictlyOrderedList.inorderSpread(xs, ys)
+}
 
 def appendAssocFour(@induct as: List[BigInt], bs: List[BigInt], cs: List[BigInt], ds: List[BigInt]): Boolean = {
     val x = as ++ (bs ++ (cs ++ ds))
@@ -402,6 +465,9 @@ def prependOneSorted(x: BigInt, @induct a: List[BigInt]): Boolean = {
     StrictlyOrderedList.isInorder(x :: a)
 }.holds
 
+/* Copyright 2009-2021 EPFL, Lausanne */
+/* Written by Clément Burgelin */
+/* https://github.com/epfl-lara/bolts/blob/master/data-structures/trees/redblack/StrictlyOrderedList.scala */
 
 object StrictlyOrderedList {
     // Some helpers
