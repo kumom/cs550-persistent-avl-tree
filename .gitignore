@@ -31,4 +31,4 @@ metals.sbt
 .idea_modules
 /.worksheet/
 
-stainless
+stainless/
