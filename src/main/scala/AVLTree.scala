@@ -4,9 +4,8 @@ import stainless.lang._
 import stainless.annotation._
 
 import AVLTree._
-import PersistentAVLTreeSpecs._
 
-object PersistentAVLTreeSpecs {
+object AVLTreeSpecs {
         def isBalanced(t: Tree) : Boolean = {
             t match {
                 case Empty => true
@@ -28,6 +27,24 @@ object PersistentAVLTreeSpecs {
         def isBST(t: Tree) : Boolean = StrictlyOrderedList.isInorder(t.toList)
 
         def isAVL(t: Tree) : Boolean = isBalanced(t) && isBST(t)
+
+        def contains(t:Tree, x: BigInt) : Boolean = {
+            require(isBST(t))
+            assert(t.subTreesAreBST)
+
+            t match {
+                case Empty => false
+                case Node(l, v, r) => { 
+                    assert(StrictlyOrderedList.contains(l.toList, v, r.toList, x))
+                    if x == v then 
+                        true
+                    else if x > v then 
+                        contains(r, x)
+                    else 
+                        contains(l, x)
+                }
+            }
+        }.ensuring(old(t).content == t.content && isBST(t) && _ == t.toList.contains(x))
 }
 
 object AVLTree {
@@ -66,26 +83,8 @@ object AVLTree {
         def isRightHeavy : Boolean = balanceFactor >= 1
         def isLeftHeavy : Boolean = -1 >= balanceFactor
 
-        def contains(x: BigInt) : Boolean = {
-            require(isBST(this))
-            assert(subTreesAreBST)
-
-            this match {
-                case Empty => false
-                case Node(l, v, r) => { 
-                    assert(StrictlyOrderedList.contains(l.toList, v, r.toList, x))
-                    if x == v then 
-                        true
-                    else if x > v then 
-                        r.contains(x)
-                    else 
-                        l.contains(x)
-                }
-            }
-        }.ensuring(old(this).content == content && isBST(this) && _ == toList.contains(x))
-
         def insert(x: BigInt) : Node = {
-            require(isAVL(this))
+            require(AVLTreeSpecs.isAVL(this))
             assert(subTreesAreAVL)
 
             this match {
@@ -102,11 +101,11 @@ object AVLTree {
             }
         }.ensuring(res => res.toList == StrictlyOrderedList.inorderInsert(toList, x) && 
                         (res.height == height || res.height == height + 1) && 
-                        res.contains(x) && 
-                        isAVL(res))
+                        AVLTreeSpecs.contains(res, x) && 
+                        AVLTreeSpecs.isAVL(res))
 
         def remove(x: BigInt) : Tree = {
-            require(isAVL(this))
+            require(AVLTreeSpecs.isAVL(this))
             assert(subTreesAreAVL)
             
             this match {
@@ -127,12 +126,12 @@ object AVLTree {
             }
         }.ensuring(res => res.toList == StrictlyOrderedList.deleteFirst(toList, x) &&
                         (res.height == height || res.height == height - 1) && 
-                        !res.contains(x) &&
-                        isAVL(res))
+                        !AVLTreeSpecs.contains(res, x) &&
+                        AVLTreeSpecs.isAVL(res))
 
         // Lemmas
         def subTreesAreBST : Boolean = {
-            require(isBST(this))
+            require(AVLTreeSpecs.isBST(this))
 
             this match {
                 case Empty => true
@@ -141,19 +140,19 @@ object AVLTree {
                     StrictlyOrderedList.inorderSpread(l.toList, v, r.toList) &&
                     StrictlyOrderedList.isInorder(l.toList :+ v) &&
                     StrictlyOrderedList.isInorder(v :: r.toList) &&
-                    isBST(r) && isBST(l) &&
+                    AVLTreeSpecs.isBST(r) && AVLTreeSpecs.isBST(l) &&
                     r.subTreesAreBST && l.subTreesAreBST
             }
         }.holds
 
         def subTreesAreAVL : Boolean = {
-            require(isAVL(this))
+            require(AVLTreeSpecs.isAVL(this))
 
             this match {
                 case Empty => true
                 case Node(l, v, r) => 
                     subTreesAreBST &&
-                    isAVL(r) && isAVL(l) &&
+                    AVLTreeSpecs.isAVL(r) && AVLTreeSpecs.isAVL(l) &&
                     r.subTreesAreAVL && l.subTreesAreAVL
             }
         }.holds
@@ -163,7 +162,7 @@ object AVLTree {
 
     case class Node (l: Tree, v: BigInt, r: Tree) extends Tree {
         def removeMin() : (BigInt, Tree) = {
-            require(isAVL(this))
+            require(AVLTreeSpecs.isAVL(this))
             assert(subTreesAreAVL)
 
             l match {
@@ -179,7 +178,7 @@ object AVLTree {
                    res._2.toList == toList.tail &&
                    StrictlyOrderedList.isInorder(res._1 :: res._2.toList) &&
                    (res._2.height == height || res._2.height == height - 1) && 
-                   isAVL(res._2))
+                   AVLTreeSpecs.isAVL(res._2))
 
         
     }
@@ -247,7 +246,7 @@ object AVLTree {
                     (res.height == n.height || res.height == n.height - 1))
 
     private def balance(n: Tree) : Tree = {
-        require(isValidUnbalanced(n))
+        require(AVLTreeSpecs.isValidUnbalanced(n))
 
         n match {
             case Empty => Empty
@@ -271,7 +270,7 @@ object AVLTree {
         }
     }.ensuring(res => n.toList == res.toList &&
                     (res.height == n.height || res.height == n.height - 1) && 
-                    isBalanced(res))
+                    AVLTreeSpecs.isBalanced(res))
 }
 
 /* Copyright 2009-2021 EPFL, Lausanne */
