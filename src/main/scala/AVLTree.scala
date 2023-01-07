@@ -179,8 +179,6 @@ object AVLTree {
                    StrictlyOrderedList.isInorder(res._1 :: res._2.toList) &&
                    (res._2.height == height || res._2.height == height - 1) && 
                    AVLTreeSpecs.isAVL(res._2))
-
-        
     }
 
     private def concatAssoc(@induct l1: List[BigInt], l2: List[BigInt], l3: List[BigInt]) : Boolean = {
@@ -197,6 +195,7 @@ object AVLTree {
                         assert(concatAssoc(l.toList, v :: ll.toList, vv :: rr.toList))
                         val res = Node(Node(l, v, ll), vv, rr)
 
+                        // the assertions below can be commented out
                         if n.balanceFactor == -2 then
                             if r.balanceFactor == 0 then
                                 assert(res.balanceFactor == 1)
@@ -226,6 +225,7 @@ object AVLTree {
                         assert(concatAssoc(ll.toList, vv :: rr.toList, v :: r.toList))
                         val res = Node(ll, vv, Node(rr, v, r))
 
+                        // the assertions below can be commented out
                         if n.balanceFactor == -2 then
                             if l.balanceFactor == 0 then
                                 assert(res.balanceFactor == 1)
