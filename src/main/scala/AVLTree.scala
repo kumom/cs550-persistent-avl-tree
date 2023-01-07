@@ -1,197 +1,460 @@
-sealed abstract class AVLTree {
-    def balanceFactor: BigInt
-    def height: BigInt
+import stainless.collection._
+import stainless.proof._
+import stainless.lang._
+import stainless.annotation._
 
-    // impl only to make stainless happy
-    def insert(v: BigInt): AVLTree = {
-        require(this.isAVL())
-        this
-    }
+import AVLTree._
+import PersistentAVLTreeSpecs._
 
-    def has(v: BigInt): Boolean
-
-    // impl only to make stainless happy
-    def delete(v: BigInt): AVLTree = {
-        require(this.isAVL())
-        this
-    }
-
-    // impl only to make stainless happy
-    def balanced(): AVLTree = {
-        require(this.isAlmostAVL())
-        this
-    }
-
-    def isAVL(): Boolean
-    def isAlmostAVL(): Boolean
-    
-    def isBST(): Boolean
-}
-
-case object Empty extends AVLTree {
-    override def balanceFactor: BigInt = 0
-    override def height: BigInt = -1
-
-    override def insert(v: BigInt): AVLTree = Branch(v, Empty, Empty)
-
-    override def delete(v: BigInt): AVLTree = this
-
-    override def has(v: BigInt): Boolean = false
-
-    override def balanced(): AVLTree = this
-
-    override def isAlmostAVL(): Boolean = true
-
-    override def isAVL(): Boolean = true
-
-    override def isBST(): Boolean = true
-}
-
-def maxBigInt(a: BigInt, b: BigInt): BigInt = {
-    if a > b then a else b
-}
-
-case class Branch(v: BigInt, left: AVLTree, right: AVLTree) extends AVLTree {
-    override def balanceFactor: BigInt = right.height - left.height
-    override def height: BigInt = maxBigInt(left.height, right.height) + 1
-
-    override def has(v: BigInt): Boolean = {
-        if this.v == v then
-            true 
-        else if v < this.v then
-            left.has(v)
-        else
-            right.has(v)
-    }
-
-    override def insert(v: BigInt): AVLTree = {
-        require(this.isAVL())
-        if this.v == v then
-            this
-        else if v < this.v then
-            val lefter = this.left.insert(v)
-            // assert(lefter.height <= this.left.height + 1)
-            // assert(this.left.height <= )
-            val res = Branch(this.v, lefter, this.right)
-            // assert(res.isBST())
-            assert(lefter.height <= this.left.height + 1)
-            assert(this.right.height - lefter.height >= -2)
-            assert(res.isAlmostAVL())
-            res.balanced()
-        else
-            Branch(this.v, this.left, this.right.insert(v)).balanced()
-    }.ensuring(res => res.isAVL() && res.height <= this.height + 1)
-
-    override def delete(v: BigInt): AVLTree = {
-        require(this.isAVL())
-        if this.v == v then {
-            if this.left == Empty then
-                this.right
-            else if this.right == Empty then 
-                this.left
-            else {
-                // find biggest in left subtree -> it has no right child
-                // move value from it into root of result
-                val left = this.left.asInstanceOf[Branch]
-                val max = left.max()
-                Branch(max, left.delete(max), this.right).balanced() // left.delete(max) is simple since max has no right child
+object PersistentAVLTreeSpecs {
+        def isBalanced(t: Tree) : Boolean = {
+            t match {
+                case Empty => true
+                case n: Node =>
+                    -1 <= n.balanceFactor && n.balanceFactor <= 1 &&
+                    isBalanced(n.l) && isBalanced(n.r)
             }
-        } else if v < this.v then
-            Branch(this.v, this.left.delete(v), this.right).balanced()
-        else 
-            Branch(this.v, this.left, this.right.delete(v)).balanced()
-    }.ensuring(res => res.isAVL())
-
-    def max(): BigInt = {
-        this.right match {
-            case Empty => v
-            case b: Branch => b.max()
         }
-    }
-    override def balanced(): AVLTree = {
-        require(this.isAlmostAVL())
-        require((!(this.balanceFactor == 2) || (this.right.balanceFactor == 1 || this.right.balanceFactor == -1))&& (!(this.balanceFactor == -2) || (this.left.balanceFactor == 1 || this.left.balanceFactor == -1)))
-        if this.balanceFactor == 2 then {
-            // assert(this.right.balanceFactor == 1 || this.right.balanceFactor == -1)
-            if this.right.balanceFactor == -1 then
-                this.rotateRightLeft()
-            else
-                this.rotateLeft()
-        } else if this.balanceFactor == -2 then {
-            if this.left.balanceFactor == 1 then
-                this.rotateLeftRight()
-            else
-                this.rotateRight()
-        } else
-            this
-    }.ensuring(res => res.isAVL())
 
-    // this is +2, right child is +1
-    def rotateLeft(): AVLTree = {
-        require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 1)
-        val Branch(w, a, rChild) = this
-        val Branch(u, b, c) = rChild.asInstanceOf[Branch]
-        Branch(u, Branch(w, a, b), c)
-    }.ensuring(res => res.isAVL())
+        def isValidUnbalanced(t: Tree) : Boolean = {
+            t match {
+                case Empty => true
+                case n: Node =>
+                    -2 <= n.balanceFactor && n.balanceFactor <= 2 &&
+                    isBalanced(n.l) && isBalanced(n.r)
+            }
+        }
 
-    // this is on +2, right child is on -1
-    def rotateRightLeft(): AVLTree = {
-        require(this.isAlmostAVL() && this.balanceFactor == 2 && this.right.balanceFactor == 1)
-        val Branch(w, a, rChild) = this
-        val Branch(u, lGrandchild, d) = rChild.asInstanceOf[Branch]
-        val Branch(z, b, c) = lGrandchild.asInstanceOf[Branch]
-        Branch(z, Branch(w, a, b), Branch(u, c, d))
-    }.ensuring(res => res.isAVL())
+        def isBST(t: Tree) : Boolean = StrictlyOrderedList.isInorder(t.toList)
 
-    def rotateRight(): AVLTree = {
-        require(this.isAlmostAVL() && this.balanceFactor == -2 && this.left.balanceFactor == -1)
-        val Branch(w, lChild, c) = this
-        val Branch(u, a, b) = lChild.asInstanceOf[Branch]
-        Branch(u, a, Branch(w, b, c))
-    }.ensuring(res => res.isAVL())
+        def isAVL(t: Tree) : Boolean = isBalanced(t) && isBST(t)
+}
 
-    def rotateLeftRight(): AVLTree = {
-        require(this.isAlmostAVL() && this.balanceFactor == -2 && this.left.balanceFactor == 1)
-        val Branch(w, lChild, d) = this
-        val Branch(u, a, rGrandchild) = lChild.asInstanceOf[Branch]
-        val Branch(z, b, c) = rGrandchild.asInstanceOf[Branch]
-        Branch(z, Branch(u, a, b), Branch(w, c, d))
-    }.ensuring(res => res.isAVL())
+object AVLTree {
+    sealed abstract class Tree {
+        lazy val size : BigInt = (this match {
+            case Empty => BigInt(0)
+            case Node(l, v, r) => l.size + BigInt(1) + r.size
+        }).ensuring(_ == toList.length)
 
-    override def isAVL(): Boolean = this.isAlmostAVL() && this.balanceFactor < 2 && this.balanceFactor > -2
-    private def off(): Boolean = {
-        if this.balanceFactor == 2 then
-            this.right match
+        lazy val height : BigInt = (this match {
+            case Empty => BigInt(0)
+            case Node(l, v, r) => 
+                val lh = l.height
+                val rh = r.height
+                val h = BigInt(1) + (if lh > rh then lh else rh)
+                assert(h == lh + 1 || h == rh + 1)
+                h
+        }).ensuring(_ >= 0)
+
+        def content: Set[BigInt] = this match {
+            case Empty => Set.empty
+            case Node(l, v, r) => l.content ++ Set(v) ++ r.content
+        }
+
+        // inorder traversel of the tree
+        def toList: List[BigInt] = (this match {
+            case Empty => List.empty[BigInt]
+            case Node(l, v, r) => l.toList ++ (v :: r.toList)
+        }).ensuring(_.content == content)
+
+        def balanceFactor: BigInt = (this match {
+            case Empty => 0
+            case Node(l, v, r) => r.height - l.height
+        })
+
+        def isRightHeavy : Boolean = balanceFactor >= 1
+        def isLeftHeavy : Boolean = -1 >= balanceFactor
+
+        def contains(x: BigInt) : Boolean = {
+            require(isBST(this))
+            assert(subTreesAreBST)
+
+            this match {
                 case Empty => false
-                case z => z.height == 1 || z.height == -1
-        else if this.balanceFactor == -2 then
-            this.left match
-                case Empty => false
-                case z => z.height == 1 || z.height == -1
-        else
-            true
+                case Node(l, v, r) => { 
+                    assert(StrictlyOrderedList.contains(l.toList, v, r.toList, x))
+                    if x == v then 
+                        true
+                    else if x > v then 
+                        r.contains(x)
+                    else 
+                        l.contains(x)
+                }
+            }
+        }.ensuring(old(this).content == content && isBST(this) && _ == toList.contains(x))
+
+        def insert(x: BigInt) : Node = {
+            require(isAVL(this))
+            assert(subTreesAreAVL)
+
+            this match {
+                case Empty => 
+                    balance(Node(Empty, x, Empty)).asInstanceOf[Node]
+                case Node(l, v, r) => 
+                    assert(StrictlyOrderedList.insertLemma(l.toList, v, r.toList, x))
+                    if v == x then 
+                        this.asInstanceOf[Node]
+                    else if v < x then
+                        balance(Node(l, v, balance(r.insert(x)))).asInstanceOf[Node]
+                    else
+                        balance(Node(balance(l.insert(x)), v, r)).asInstanceOf[Node]
+            }
+        }.ensuring(res => res.toList == StrictlyOrderedList.inorderInsert(toList, x) && 
+                        (res.height == height || res.height == height + 1) && 
+                        res.contains(x) && 
+                        isAVL(res))
+
+        def remove(x: BigInt) : Tree = {
+            require(isAVL(this))
+            assert(subTreesAreAVL)
+            
+            this match {
+                case Empty => 
+                    Empty
+                case Node(l, v, r) => 
+                    assert(StrictlyOrderedList.deleteFirstLemma(l.toList, v, r.toList, x))
+                    if x > v then
+                        balance(Node(l, v, balance(r.remove(x))))
+                    else if x < v then
+                        balance(Node(balance(l.remove(x)), v, r))
+                    else 
+                        if r == Empty then
+                            balance(l)
+                        else
+                            val (min, rr) = (r.asInstanceOf[Node]).removeMin()
+                            balance(Node(l, min, rr))
+            }
+        }.ensuring(res => res.toList == StrictlyOrderedList.deleteFirst(toList, x) &&
+                        (res.height == height || res.height == height - 1) && 
+                        !res.contains(x) &&
+                        isAVL(res))
+
+        // Lemmas
+        def subTreesAreBST : Boolean = {
+            require(isBST(this))
+
+            this match {
+                case Empty => true
+                case Node(l, v, r) => 
+                    StrictlyOrderedList.inorderSpread(l.toList, r.toList) &&
+                    StrictlyOrderedList.inorderSpread(l.toList, v, r.toList) &&
+                    StrictlyOrderedList.isInorder(l.toList :+ v) &&
+                    StrictlyOrderedList.isInorder(v :: r.toList) &&
+                    isBST(r) && isBST(l) &&
+                    r.subTreesAreBST && l.subTreesAreBST
+            }
+        }.holds
+
+        def subTreesAreAVL : Boolean = {
+            require(isAVL(this))
+
+            this match {
+                case Empty => true
+                case Node(l, v, r) => 
+                    subTreesAreBST &&
+                    isAVL(r) && isAVL(l) &&
+                    r.subTreesAreAVL && l.subTreesAreAVL
+            }
+        }.holds
     }
-    override def isAlmostAVL(): Boolean = {
-        off() &&  this.balanceFactor <= 2 && this.balanceFactor >= -2 && this.left.isAVL() && this.right.isAVL()
+
+    case object Empty extends Tree 
+
+    case class Node (l: Tree, v: BigInt, r: Tree) extends Tree {
+        def removeMin() : (BigInt, Tree) = {
+            require(isAVL(this))
+            assert(subTreesAreAVL)
+
+            l match {
+                case Empty => 
+                    (v, r)
+                case l: Node => 
+                    val (min, ll) = l.removeMin()
+                    (min, balance(Node(ll, v, r)))
+            }
+
+        }.ensuring(res => 
+                   res._1 == toList.head &&
+                   res._2.toList == toList.tail &&
+                   StrictlyOrderedList.isInorder(res._1 :: res._2.toList) &&
+                   (res._2.height == height || res._2.height == height - 1) && 
+                   isAVL(res._2))
+
+        
     }
-    override def isBST(): Boolean = {
-        if !this.left.isBST() || !this.right.isBST() then
-            false 
-        else if this.left == Empty && this.right == Empty then
-            true
-        else if this.left == Empty && this.right != Empty then {
-            val Branch(v2, _, _) = this.right: @unchecked
-            v < v2
+
+    private def concatAssoc(@induct l1: List[BigInt], l2: List[BigInt], l3: List[BigInt]) : Boolean = {
+        (l1 ++ l2) ++ l3 == l1 ++ (l2 ++ l3)
+    }.holds
+
+    private def rotateLeft(n: Node) : Node = {
+        require(n.isRightHeavy)
+
+        n match {
+            case Node(l, v, r) => {
+                r match {
+                    case Node(ll, vv, rr) => 
+                        assert(concatAssoc(l.toList, v :: ll.toList, vv :: rr.toList))
+                        val res = Node(Node(l, v, ll), vv, rr)
+
+                        if n.balanceFactor == -2 then
+                            if r.balanceFactor == 0 then
+                                assert(res.balanceFactor == 1)
+                            else if r.balanceFactor == -1 then
+                                assert(res.balanceFactor == 0)
+                            else if r.balanceFactor == 1 then
+                                assert(res.balanceFactor == 2)
+
+                        if n.balanceFactor == 1 then
+                            if r.balanceFactor == 0 then
+                                assert(res.balanceFactor == -1)
+
+                        res
+                }
+            }
         }
-        else if this.left != Empty && this.right == Empty then {
-            val Branch(v2, _, _) = this.left: @unchecked
-            v > v2
+    }.ensuring(res => n.toList == res.toList && 
+                    (res.height == n.height || res.height == n.height - 1))
+
+    private def rotateRight(n: Node) : Node = {
+        require(n.isLeftHeavy)
+
+        n match {
+            case Node(l, v, r) => {
+                l match {
+                    case Node(ll, vv, rr) =>  
+                        assert(concatAssoc(ll.toList, vv :: rr.toList, v :: r.toList))
+                        val res = Node(ll, vv, Node(rr, v, r))
+
+                        if n.balanceFactor == -2 then
+                            if l.balanceFactor == 0 then
+                                assert(res.balanceFactor == 1)
+                            else if l.balanceFactor == -1 then
+                                assert(res.balanceFactor == 0)
+                            else if l.balanceFactor == 1 then
+                                assert(res.balanceFactor == 2)
+
+                        if n.balanceFactor == -1 then
+                            if l.balanceFactor == 0 then
+                                assert(res.balanceFactor == 1)
+
+                        res
+                }
+            }
         }
-        else {
-            val Branch(v1, _, _) = this.left: @unchecked
-            val Branch(v2, _, _) = this.right: @unchecked
-            v1 < v && v < v2
+    }.ensuring(res => n.toList == res.toList && 
+                    (res.height == n.height || res.height == n.height - 1))
+
+    private def balance(n: Tree) : Tree = {
+        require(isValidUnbalanced(n))
+
+        n match {
+            case Empty => Empty
+            case n: Node =>
+                if n.balanceFactor == 2 then
+                    assert(n.r.height == n.l.height + 2)
+                    if n.r.balanceFactor == -1 then
+                        rotateLeft(Node(n.l, n.v, rotateRight(n.r.asInstanceOf[Node])))
+                    else
+                        assert(n.r.balanceFactor == 0 || n.r.balanceFactor == 1)
+                        rotateLeft(n)
+                else if n.balanceFactor == -2 then
+                    assert(n.r.height + 2 == n.l.height)
+                    if n.l.balanceFactor == 1 then
+                        rotateRight(Node(rotateLeft(n.l.asInstanceOf[Node]), n.v, n.r))
+                    else
+                        assert(n.l.balanceFactor == 0 || n.l.balanceFactor == -1)
+                        rotateRight(n)
+                else 
+                    n
+        }
+    }.ensuring(res => n.toList == res.toList &&
+                    (res.height == n.height || res.height == n.height - 1) && 
+                    isBalanced(res))
+}
+
+/* Copyright 2009-2021 EPFL, Lausanne */
+/* Written by Clément Burgelin */
+/* https://github.com/epfl-lara/bolts/blob/master/data-structures/trees/redblack/StrictlyOrderedList.scala */
+
+object StrictlyOrderedList {
+    def isInorder(l: List[BigInt]): Boolean = l match {
+        case Cons(h1, Cons(h2, _)) if(h1 >= h2) => false
+        case Cons(_, t) => isInorder(t)
+        case _ => true
+    }
+
+    def inorderSpread(@induct xs: List[BigInt], ys: List[BigInt]): Boolean = (
+        isInorder(xs ++ ys) == (
+            isInorder(xs) &&
+            isInorder(ys) &&
+            (xs.isEmpty || ys.isEmpty || xs.last < ys.head)
+        )
+    ).holds
+
+    def inorderSpread(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = (
+        isInorder(xs ++ (y :: ys)) == (
+            isInorder(xs :+ y) &&
+            isInorder(y :: ys)
+        ) && inorderSpread(xs, y :: ys)
+    ).holds
+
+    def bigger(@induct xs: List[BigInt], y: BigInt, e: BigInt): Boolean = {
+        require(isInorder(xs :+ y) && y <= e)
+        xs.forall(_ < e) && !xs.contains(e)
+    }.holds
+
+    def bigger(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && y <= e)
+        inorderSpread(xs, y, ys)
+        bigger(xs, y, e)
+        xs.forall(_ < e) && !xs.contains(e)
+    }.holds
+
+    def smaller(y: BigInt, @induct ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(y :: ys) && e <= y)
+        ys.forall(e < _) && !ys.contains(e)
+    }.holds
+
+    def smaller(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)) && e <= y)
+        inorderSpread(xs, y, ys)
+        smaller(y, ys, e)
+        ys.forall(e < _) && !ys.contains(e)
+    }.holds
+
+    def contains(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)))
+        val l = xs ++ (y :: ys)
+
+        if(e < y) {
+            smaller(xs, y, ys, e) && (l.contains(e) == xs.contains(e))
+        } else {
+            bigger(xs, y, ys, e) && (l.contains(e) == (y :: ys).contains(e))
         }
     }
-    
+
+    def inorderInsert(l: List[BigInt], e: BigInt): List[BigInt] = {
+        require(isInorder(l))
+        decreases(l.length)
+        l match {
+            case Nil() => Cons(e, Nil())
+            case Cons(h, t) if(h == e) => l
+            case Cons(h, t) if(e < h) => Cons(e, l)
+            case Cons(h, t) => Cons(h, inorderInsert(t, e))
+        }
+    }.ensuring(res =>
+        isInorder(res)
+    )
+
+    def insertLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)))
+        inorderInsert(xs ++ (y :: ys), e) == (
+            if(e < y)
+                inorderInsert(xs, e) ++ (y :: ys)
+            else
+                xs ++ inorderInsert(y :: ys, e)
+        )
+    }.holds
+
+    def deleteFirst(@induct l: List[BigInt], e: BigInt): List[BigInt] = {
+        require(isInorder(l))
+        l match {
+            case Cons(h, t) if(h == e) => t
+            case Cons(h, t) => Cons(h, deleteFirst(t, e))
+            case _ => l
+        }
+    }.ensuring(res =>
+        isInorder(res) &&
+        (if(l.contains(e)) res.size == l.size - 1 else res == l)
+    )
+
+    def deleteFirstLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+        require(isInorder(xs ++ (y :: ys)))
+        deleteFirst(xs ++ (y :: ys), e) == {
+            contains(xs, y, ys, e)
+            if(e < y) {
+                deleteFirst(xs, e) ++ (y :: ys)
+            } else {
+                xs ++ deleteFirst(y :: ys, e)
+            }
+        }
+    }.holds
+
+    // // Unused helpers/lemmas below
+    // def concatLast(@induct left: List[BigInt], right: List[BigInt]): Boolean = {
+    //     right.nonEmpty ==> ((left ++ right).last == right.last)
+    // }.holds
+
+    // def addLast(left: List[BigInt], elem: BigInt): Boolean = {
+    //     (left :+ elem) == (left ++ List(elem))
+    // }.holds
+
+    // def concatElem(@induct left: List[BigInt], elem: BigInt, right: List[BigInt]): Boolean = {
+    //     (left ++ (elem :: right)) == ((left :+ elem) ++ right)
+    // }.holds
+
+    // def inorderSpread(@induct xs: List[BigInt], y: BigInt): Boolean = (
+    //     isInorder(xs :+ y) == (
+    //         isInorder(xs) &&
+    //         (xs.isEmpty || xs.last < y)
+    //     )
+    // ).holds
+
+    // def inorderSpread(x: BigInt, @induct xs: List[BigInt], y: BigInt, ys: List[BigInt]): Boolean = (
+    //     isInorder((x :: xs) ++ (y :: ys)) == (
+    //         x < y &&
+    //         isInorder(x :: xs) &&
+    //         isInorder(xs :+ y) &&
+    //         isInorder(y :: ys)
+    //     ) && inorderSpread(x :: xs, y, ys)
+    // ).holds
+
+    // def insertSmallerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+    //     require(isInorder(xs ++ (y :: ys)) && e < y)
+    //     inorderInsert(xs ++ (y :: ys), e) == (inorderInsert(xs, e) ++ (y :: ys))
+    // }.holds
+
+    // def insertEqualLemma(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+    //     require(isInorder(xs ++ (y :: ys)) && y == e)
+    //     check(insertBiggerLemma(xs, y, ys, e))
+    //     inorderInsert(xs ++ (y :: ys), e) == (xs ++ (y :: ys))
+    // }.holds
+
+    // def insertBiggerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+    //     require(isInorder(xs ++ (y :: ys)) && y <= e)
+    //     inorderInsert(xs ++ (y :: ys), e) == (xs ++ inorderInsert(y :: ys, e))
+    // }.holds
+
+    // def deleteSmallerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+    //     require(isInorder(xs ++ (y :: ys)) && e < y)
+    //     check(smaller(y, ys, e))
+    //     deleteFirst(xs ++ (y :: ys), e) == (deleteFirst(xs, e) ++ (y :: ys))
+    // }.holds
+
+    // def deleteEqualLemma(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+    //     require(isInorder(xs ++ (y :: ys)) && y == e)
+    //     check(deleteBiggerLemma(xs, y, ys, e))
+    //     deleteFirst(xs ++ (y :: ys), e) == (xs ++ ys)
+    // }.holds
+
+    // def deleteBiggerLemma(@induct xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+    //     require(isInorder(xs ++ (y :: ys)) && y <= e)
+    //     check(bigger(xs, y, e))
+    //     deleteFirst(xs ++ (y :: ys), e) == (xs ++ deleteFirst(y :: ys, e))
+    // }.holds
+
+    // def containsLemma(xs: List[BigInt], y: BigInt, ys: List[BigInt], e: BigInt): Boolean = {
+    //     require(isInorder(xs ++ (y :: ys)))
+    //     require(y != e)
+
+    //     val l = xs ++ (y :: ys)
+
+    //     if(e < y) {
+    //         smaller(xs, y, ys, e) && (l.contains(e) == xs.contains(e))
+    //     } else {
+    //         bigger(xs, y, ys, e) && (l.contains(e) == (y :: ys).contains(e))
+    //     }
+    // }
 }
